@@ -28,18 +28,18 @@ def filter_rows(rows: list[list[Any]], rules: dict[int, dict[str, Any]]) -> list
         for col_idx, conds in rules.items():
             if len(r) <= col_idx:
                 continue
-            val = str(r[col_idx]).strip() if r[col_idx] not in (None, "") else ""
+            val = str(r[col_idx]).strip() if r[col_idx] not in (None, '') else ''
 
-            if "equals" in conds and val in conds["equals"]:
+            if 'equals' in conds and val in conds['equals']:
                 drop = True
                 break
-            if "not_equals" in conds and val not in conds["not_equals"]:
+            if 'not_equals' in conds and val not in conds['not_equals']:
                 drop = True
                 break
-            if "contains" in conds and any(sub in val for sub in conds["contains"]):
+            if 'contains' in conds and any(sub in val for sub in conds['contains']):
                 drop = True
                 break
-            if conds.get("empty") and val in ("", "0"):
+            if conds.get('empty') and val in ('', '0'):
                 drop = True
                 break
 
