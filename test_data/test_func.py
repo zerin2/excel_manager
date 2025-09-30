@@ -1,8 +1,6 @@
-from pathlib import Path
+from src.core.main import ExcelManager
 
-from excel_manager.core.base import ExcelManager
-BASEDIR_PROJECT = Path(__file__).resolve().parents[1]
-p = path = BASEDIR_PROJECT / 'test_data' / 'test_data.xlsx'
+p = path = 'test_data.xlsx'
 
 em = ExcelManager(path=p)
 rows = em.data_rows()

@@ -1,6 +1,6 @@
 from typing import Optional
 
-from excel_manager.core.base import ExcelManager, StrOrInt
+from src.core.main import ExcelManager, StrOrInt
 
 
 class ExcelReview(ExcelManager):
