@@ -1,8 +1,6 @@
-"""Модуль фильтрации строк по заданным правилам.
+"""
+Модуль фильтрации строк по заданным правилам.
 
-Содержит:
-- `filter_rows(rows, rules)` — исключает строки, если значения в колонках
-  удовлетворяют условиям (`equals`, `not_equals`, `contains`, `empty`).
 """
 
 from typing import Any
@@ -15,10 +13,12 @@ def filter_rows(rows: list[list[Any]], rules: dict[int, dict[str, Any]]) -> list
     rules: словарь вида:
         {
           col_idx: {
-             "equals": ["A", "B"], # исключить строки, где значение равно одному из списка
-             "contains": ["ABC"], # исключить, если значение содержит подстроку
-             "not_equals": ["X"], # исключить, если значение = X
-             "empty": True,   # исключить пустые/нулевые значения
+             "equals": ["A", "B"],   # исключить строки, где значение равно одному из списка
+             "not_equals": ["X"],    # исключить, если значение = X
+             "contains": ["ABC"],    # исключить, если значение содержит подстроку
+             "regex": [r"..."],  # исключить, если значение совпадает по регулярке
+             "empty": True,          # исключить пустые/нулевые значения
+             "mode": "or",           # логика: or (по умолчанию) / and
           },
         }
     """
@@ -30,16 +30,25 @@ def filter_rows(rows: list[list[Any]], rules: dict[int, dict[str, Any]]) -> list
                 continue
             val = str(r[col_idx]).strip() if r[col_idx] not in (None, '') else ''
 
-            if 'equals' in conds and val in conds['equals']:
-                drop = True
-                break
-            if 'not_equals' in conds and val not in conds['not_equals']:
-                drop = True
-                break
-            if 'contains' in conds and any(sub in val for sub in conds['contains']):
-                drop = True
-                break
-            if conds.get('empty') and val in ('', '0'):
+            checks = []
+
+            if 'equals' in conds:
+                checks.append(val in conds['equals'])
+            if 'not_equals' in conds:
+                checks.append(val in conds['not_equals'])
+            if 'contains' in conds:
+                checks.append(any(sub in val for sub in conds['contains']))
+            if 'regex' in conds:
+                import re
+                checks.append(any(re.search(pat, val) for pat in conds['regex']))
+            if 'empty' in conds:
+                if conds['empty'] is True:
+                    checks.append(val in ('', '0'))
+                elif conds['empty'] is False:
+                    checks.append(val not in ('', '0'))
+
+            mode = conds.get('mode', 'or').lower()
+            if (mode == 'or' and any(checks)) or (mode == 'and' and all(checks)):
                 drop = True
                 break
 

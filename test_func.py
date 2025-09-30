@@ -1,13 +1,19 @@
-from excel_manager.config import BASEDIR_PROJECT
+from pathlib import Path
+
 from excel_manager.core.base import ExcelManager
+BASEDIR_PROJECT = Path(__file__).resolve().parents[1]
+p = path = BASEDIR_PROJECT / 'test_data' / 'test_data.xlsx'
 
-p = path=BASEDIR_PROJECT / 'test_data' / 'test_data.xlsx'
-
-exl_manager = ExcelManager(path=p)
-
-# print(exl_manager.filter({'Столбец3': {'contains': ['Виктор2']}}))
-exl_manager.copy_columns(
+em = ExcelManager(path=p)
+rows = em.data_rows()
+em.filter_and_transfer(
     dest_path=p,
-    dest_sheet='Лист_2',
-    columns=[0,1,2]
+    dest_sheet="Лист_555",
+    columns=["Столбец2", "Столбец3", "Столбец10", "Столбец13", "Столбец14"],
+    rules={
+        "Столбец3": {"equals": ["Виктор2"], "empty": True},
+        "Столбец2": {"equals": ["Надя", "М"], 'mode': 'and'},
+
+    },
+    rows=rows,
 )

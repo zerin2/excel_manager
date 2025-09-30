@@ -1,3 +1,4 @@
+from copy import copy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Optional, Union
@@ -6,10 +7,11 @@ from openpyxl import load_workbook, Workbook
 from openpyxl.worksheet.worksheet import Worksheet
 from openpyxl.utils import coordinate_to_tuple
 
-from excel_manager.constants import AppConfig, StrOrInt
 from excel_manager.core.row_filters import filter_rows
 from excel_manager.core.row_reader import read_rows
 from excel_manager.core.utils import get_sheet_name, ensure_ws, _norm_header
+
+StrOrInt = Union[str, int]
 
 
 @dataclass
@@ -58,7 +60,7 @@ class ExcelManager:
 
     # ---------- базовые служебные вещи ----------
 
-    def _detect_header_row(self, scan_rows: int = AppConfig.scan_header_rows) -> int:
+    def _detect_header_row(self, scan_rows: int = 50) -> int:
         """Ищем первую строку среди первых N, где есть >=2 непустых ячейки.
         Возвращаем её индекс (Excel 1-based). Если не нашли — поднимаем ошибку.
         """
@@ -186,41 +188,48 @@ class ExcelManager:
 
     def copy_columns(
             self,
-            dest_path: Union[str, Path],
+            dest_path: Union[str, Path] | None,
             dest_sheet: str,
             columns: list[StrOrInt],
+            rows: list[list[Any]] | None = None,
             include_header: bool = True,
             start_cell: str = 'A1',
     ) -> Path:
         """
         Скопировать выбранные столбцы текущего листа в ДРУГУЮ книгу/лист.
         Если файла нет — создаём; если листа нет — создаём (регистронезависимо).
+
+        :param dest_path: путь к выходному xlsx (если None — берём self.path)
+        :param dest_sheet: имя листа в выходном файле
+        :param columns: список колонок (названия или индексы), которые переносим
+        :param rows: можно передать заранее считанные строки (если None — берём из data_rows)
+        :param include_header: включать ли строку заголовка
+        :param start_cell: ячейка старта вставки (по умолчанию A1)
         """
-        dest_path = Path(dest_path)
+        dest_path = Path(dest_path) if dest_path else self.path
         if dest_path.exists():
             dwb = load_workbook(dest_path)
         else:
             dwb = Workbook()
         dws = ensure_ws(dwb, dest_sheet)
 
+        src_rows = rows if rows is not None else self.data_rows()
         col_indices = [self.col_to_idx(c) for c in columns]
-        out_rows: list[list[Any]] = []
 
+        out_rows: list[list[Any]] = []
         if include_header:
             out_rows.append([
-                self.header.names[i]
-                if i < len(self.header.names)
-                else None
+                self.header.names[i] if i < len(self.header.names) else None
                 for i in col_indices
             ])
-        for r in self.data_rows():
+        for r in src_rows:
             out_rows.append([r[i] if i < len(r) else None for i in col_indices])
 
         start_row, start_col = coordinate_to_tuple(start_cell)
-
         for i, row in enumerate(out_rows, start=start_row):
             for j, val in enumerate(row, start=start_col):
                 dws.cell(row=i, column=j, value=val)
+
         dwb.save(dest_path)
         return dest_path
 
@@ -251,20 +260,132 @@ class ExcelManager:
 
     def transfer_by_headers(
             self,
-            dest_path: Union[str, Path],
+            dest_path: Union[str, Path] | None,
             dest_sheet: str,
             headers: list[str],
+            rows: list[list[Any]] | None = None,
             include_header: bool = True,
             start_cell: str = 'A1',
     ) -> Path:
         """
         «Передача названий столбцов и перенос их в другую таблицу»:
         принимаем список заголовков (в нужном порядке), копируем соответствующие колонки.
+
+        :param dest_path: путь к выходному xlsx (если None — берём self.path)
+        :param dest_sheet: имя листа в выходном файле
+        :param headers: список заголовков (в нужном порядке)
+        :param rows: можно передать заранее считанные строки (если None — берём из data_rows)
+        :param include_header: включать ли строку заголовка
+        :param start_cell: ячейка старта вставки (по умолчанию A1)
         """
         return self.copy_columns(
             dest_path=dest_path,
             dest_sheet=dest_sheet,
             columns=headers,
+            rows=rows,
             include_header=include_header,
             start_cell=start_cell,
         )
+
+    def filter_and_transfer(
+            self,
+            dest_path: Union[str, Path] | None,
+            dest_sheet: str,
+            columns: list[StrOrInt],
+            rules: dict[StrOrInt, dict[str, Any]],
+            rows: list[list[Any]] | None = None,
+            include_header: bool = True,
+            start_cell: str = "A1",
+    ) -> Path:
+        """
+        Фильтрует строки по правилам и переносит выбранные колонки в другую таблицу.
+
+        :param dest_path: путь к выходному xlsx (если None — берём self.path)
+        :param dest_sheet: имя листа в выходном файле
+        :param columns: список колонок (названия или индексы), которые переносим
+        :param rules: фильтр (как в методе filter)
+        :param rows: можно передать заранее считанные строки (если None — берём из data_rows)
+        :param include_header: включать ли строку заголовка
+        :param start_cell: ячейка старта вставки (по умолчанию A1)
+        """
+        dest_path = Path(dest_path) if dest_path else self.path
+        if dest_path.exists():
+            dwb = load_workbook(dest_path)
+        else:
+            dwb = Workbook()
+        dws = ensure_ws(dwb, dest_sheet)
+
+        src_rows = rows if rows is not None else self.data_rows()
+
+        idx_rules: dict[int, dict[str, Any]] = {
+            self.col_to_idx(col): cond for col, cond in rules.items()
+        }
+        filtered_rows = filter_rows(src_rows, idx_rules)
+
+        col_indices = [self.col_to_idx(c) for c in columns]
+        out_rows: list[list[Any]] = []
+        if include_header:
+            out_rows.append([
+                self.header.names[i] if i < len(self.header.names) else None
+                for i in col_indices
+            ])
+        for r in filtered_rows:
+            out_rows.append([r[i] if i < len(r) else None for i in col_indices])
+
+        start_row, start_col = coordinate_to_tuple(start_cell)
+        for i, row in enumerate(out_rows, start=start_row):
+            for j, val in enumerate(row, start=start_col):
+                dws.cell(row=i, column=j, value=val)
+
+        dwb.save(dest_path)
+        return dest_path
+
+    def transfer_styles(
+            self,
+            dest_path: Union[str, Path] | None = None,
+            dest_sheet: str = None,
+            columns: list[StrOrInt] = None,
+            rows: list[list[Any]] | None = None,
+            include_header: bool = True,
+            start_cell: str = "A1",
+    ) -> Path:
+        """
+        Переносит только стили (шрифт, цвет, формат, границы) для выбранных колонок и строк.
+
+        ⚠ Работает только если ExcelManager открыт с read_only=False.
+
+        :param dest_path: путь к выходному xlsx (если None — берём self.path)
+        :param dest_sheet: имя листа в выходном файле
+        :param columns: список колонок (названия или индексы), стили которых переносим
+        :param rows: можно передать те же строки, что и при переносе данных (для согласованности)
+        :param include_header: учитывать ли строку заголовка
+        :param start_cell: ячейка старта вставки (по умолчанию A1)
+        """
+        if self.wb.read_only:
+            raise RuntimeError("transfer_styles требует read_only=False, иначе стили недоступны")
+
+        dest_path = Path(dest_path) if dest_path else self.path
+        if not dest_path.exists():
+            raise FileNotFoundError(f"Файл {dest_path} не найден (нужно сначала перенести данные).")
+
+        dwb = load_workbook(dest_path)
+        if dest_sheet not in dwb.sheetnames:
+            raise KeyError(f"В книге нет листа '{dest_sheet}' для переноса стилей")
+
+        dws = dwb[dest_sheet]
+        src_rows = rows if rows is not None else self.data_rows()
+
+        col_indices = [self.col_to_idx(c) for c in columns]
+        start_row, start_col = coordinate_to_tuple(start_cell)
+        total_rows = len(src_rows) + (1 if include_header else 0)
+
+        for i in range(total_rows):
+            for j, col_idx in enumerate(col_indices, start=start_col):
+                src_row_idx = self.header.row_idx + i  # абсолютный Excel-ряд
+                source_cell = self.ws.cell(row=src_row_idx, column=col_idx + 1)
+                target_cell = dws.cell(row=start_row + i, column=j)
+                if source_cell.has_style:
+                    target_cell._style = copy(source_cell._style)  # noqa
+
+        dwb.save(dest_path)
+        return dest_path
