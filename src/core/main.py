@@ -16,8 +16,8 @@ StrOrInt = Union[str, int]
 
 @dataclass
 class HeaderInfo:
-    row_idx: int  # номер строки заголовка (1-based, как в Excel)
-    names: list[str]  # исходные заголовки (как есть)
+    row_idx: int  # номер строки заголовка
+    names: list[str]  # исходные заголовки
     name_to_idx: dict[str, int]  # нормализованное имя -> 0-based индекс столбца
 
 
@@ -58,7 +58,7 @@ class ExcelManager:
 
         self._rows_cache = None
 
-    # ---------- базовые служебные вещи ----------
+    # служебные
 
     def _detect_header_row(self, scan_rows: int = 50) -> int:
         """Ищем первую строку среди первых N, где есть >=2 непустых ячейки.
@@ -115,7 +115,7 @@ class ExcelManager:
             return [(i, v if v is not None else "") for i, v in enumerate(self.header.names)]
         return [v if v is not None else "" for v in self.header.names]
 
-    # ---------- доступ к значениям ----------
+    # доступ к значениям
 
     def col_to_idx(self, col: StrOrInt) -> int:
         """Преобразование 'ИмяКолонки' -> 0-based idx, либо int -> int."""
@@ -142,7 +142,6 @@ class ExcelManager:
             )
             return values[col_idx] if col_idx < len(values) else None
 
-        # относительный к данным
         rows = self.data_rows()
         if not (1 <= row_number <= len(rows)):
             return None
@@ -166,7 +165,7 @@ class ExcelManager:
             )
         return [r[idx] if idx < len(r) else None for r in self.data_rows()]
 
-    # ---------- фильтрация ----------
+    # фильтрация
 
     def filter(self, rules: dict[StrOrInt, dict[str, Any]]) -> list[list[Any]]:
         """Фильтрация по правилам, но можно указывать колонки по имени или индексу.
@@ -184,7 +183,7 @@ class ExcelManager:
         rows = self.data_rows()
         return filter_rows(rows, idx_rules)
 
-    # ---------- копирование/запись ----------
+    # копирование/запись
 
     def copy_columns(
             self,
@@ -240,7 +239,7 @@ class ExcelManager:
             rows: list[list[Any]],
             start_cell: str = 'A1',
     ) -> Path:
-        """Универсальная запись произвольных rows в целевую книгу/лист."""
+        """Запись произвольных rows в целевую книгу/лист."""
         dest_path = Path(dest_path)
         if dest_path.exists():
             dwb = load_workbook(dest_path)
@@ -349,10 +348,8 @@ class ExcelManager:
             include_header: bool = True,
             start_cell: str = "A1",
     ) -> Path:
-        """
-        Переносит только стили (шрифт, цвет, формат, границы) для выбранных колонок и строк.
-
-        ⚠ Работает только если ExcelManager открыт с read_only=False.
+        """Переносит только стили (шрифт, цвет, формат, границы) для выбранных колонок и строк.
+        !!! Работает только если ExcelManager открыт с read_only=False. !!!
 
         :param dest_path: путь к выходному xlsx (если None — берём self.path)
         :param dest_sheet: имя листа в выходном файле
