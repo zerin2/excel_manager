@@ -7,9 +7,9 @@ from openpyxl import load_workbook, Workbook
 from openpyxl.worksheet.worksheet import Worksheet
 from openpyxl.utils import coordinate_to_tuple
 
-from src.core.row_filters import filter_rows
-from src.core.row_reader import read_rows
-from src.core.utils import get_sheet_name, ensure_ws, _norm_header
+from core.row_filters import filter_rows
+from core.row_reader import read_rows
+from core.utils import get_sheet_name, ensure_ws, _norm_header
 
 StrOrInt = Union[str, int]
 
