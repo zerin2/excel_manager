@@ -1,4 +1,4 @@
-from src.core.excel_manager import ExcelManager
+from core.excel_manager import ExcelManager
 
 p = path = 'test_data.xlsx'
 

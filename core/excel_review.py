@@ -13,22 +13,22 @@ class ExcelReview(ExcelManager):
     """
 
     def print_headers(self) -> None:
-        print("Заголовки:")
+        print('Заголовки:')
         for i, name in enumerate(self.headers(), start=1):
-            print(f"[{i:>2}] {name}")
+            print(f'[{i:>2}] {name}')
 
     def print_sheets(self) -> None:
-        print("Листы книги:")
+        print('Листы книги:')
         for i, name in enumerate(self.list_sheets(), start=1):
-            print(f"[{i:>2}] {name}")
+            print(f'[{i:>2}] {name}')
 
     def print_column(self, col: StrOrInt, limit: Optional[int] = 20,
                      include_header: bool = False) -> None:
         vals = self.get_column_values(col, include_header=include_header)
         if limit is not None:
             vals = vals[:limit]
-        title = f"Столбец: {col!r}"
+        title = f'Столбец: {col!r}'
         print(title)
-        print("-" * len(title))
+        print('-' * len(title))
         for i, v in enumerate(vals, start=1):
-            print(f"{i:>5}: {v!r}")
+            print(f'{i:>5}: {v!r}')
