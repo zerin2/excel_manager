@@ -22,15 +22,20 @@ class HeaderInfo:
 
 
 class ExcelManager:
-    """
+    """Класс для работы с Excel-файлами через openpyxl.
+
+    Назначение:
+    - Автоматизирует чтение данных, поиск заголовков и работу с колонками.
+    - Используется для получения исходных данных из файлов спец.выгрузки и справочников.
+    - Предоставляет методы для анализа и фильтрации таблиц без прямой работы с openpyxl.
     """
 
     def __init__(
-            self,
-            path: Union[str, Path],
-            sheet: Union[str, int, Iterable[str]] = 0,
-            read_only: bool = True,
-            data_only: bool = True,
+        self,
+        path: Union[str, Path],
+        sheet: Union[str, int, Iterable[str]] = 0,
+        read_only: bool = True,
+        data_only: bool = True,
     ):
         """
         path       : путь к XLSX
@@ -42,7 +47,6 @@ class ExcelManager:
         self.path = Path(path)
         self.wb: Workbook = load_workbook(self.path, read_only=read_only, data_only=data_only)
 
-        # выбор листа
         if isinstance(sheet, (str, list, tuple)):
             self.ws: Worksheet = get_sheet_name(self.wb, sheet)
         elif isinstance(sheet, int):
@@ -52,10 +56,7 @@ class ExcelManager:
                 raise ValueError(f"В книге нет листа с индексом {sheet}")
         else:
             self.ws: Worksheet = self.wb.worksheets[0]
-
-        # определение заголовка
         self.header: HeaderInfo = self.build_header()
-
         self._rows_cache = None
 
     # служебные
@@ -65,29 +66,26 @@ class ExcelManager:
         Возвращаем её индекс (Excel 1-based). Если не нашли — поднимаем ошибку.
         """
         for i, row in enumerate(
-                self.ws.iter_rows(min_row=1, max_row=scan_rows, values_only=True), start=1
+            self.ws.iter_rows(min_row=1, max_row=scan_rows, values_only=True), start=1
         ):
             non_empty = [c for c in row if c not in (None, "", " ")]
             if len(non_empty) >= 2:
                 return i
 
         raise ValueError(
-            f'Не удалось определить заголовок на листе \'{self.ws.title}\'. '
-            f'Проверьте первые {scan_rows} строк.'
+            f"Не удалось определить заголовок на листе '{self.ws.title}'. "
+            f"Проверьте первые {scan_rows} строк."
         )
 
     def build_header(self, header_row: Optional[int] = None) -> HeaderInfo:
         row_idx = header_row or self._detect_header_row()
 
-        rows = list(
-            self.ws.iter_rows(min_row=row_idx, max_row=row_idx, values_only=True)
-        )
+        rows = list(self.ws.iter_rows(min_row=row_idx, max_row=row_idx, values_only=True))
         if not rows:
             raise ValueError(
                 f"В листе '{self.ws.title}' нет строки с индексом {row_idx}. "
                 f"Доступно строк: {self.ws.max_row}"
             )
-
         header_cells = rows[0]
         names = [c if c is not None else "" for c in header_cells]
         name_to_idx = {_norm_header(v): i for i, v in enumerate(names)}
@@ -98,11 +96,16 @@ class ExcelManager:
         """Имена листов книги."""
         return list(self.wb.sheetnames)
 
-    def data_rows(self) -> list[list[Any]]:
-        """Строки данных после заголовка (пропуская полностью пустые)."""
+    def data_rows(self, rules: Optional[dict[int, dict[str, Any]]] = None) -> list[list[Any]]:
+        """Строки данных после заголовка (пропуская полностью пустые).
+        Если передан параметр `rules`, применяет фильтрацию через filter_rows().
+        """
         if self._rows_cache is None:
             start = max(self.header.row_idx + 1, 1)
             self._rows_cache = read_rows(self.ws, start_row=start)
+        if rules:
+            filtered = filter_rows(self._rows_cache, rules)
+            return filtered
         return self._rows_cache
 
     def count_rows(self) -> int:
@@ -114,8 +117,6 @@ class ExcelManager:
         if as_indexed:
             return [(i, v if v is not None else "") for i, v in enumerate(self.header.names)]
         return [v if v is not None else "" for v in self.header.names]
-
-    # доступ к значениям
 
     def col_to_idx(self, col: StrOrInt) -> int:
         """Преобразование 'ИмяКолонки' -> 0-based idx, либо int -> int."""
@@ -129,10 +130,10 @@ class ExcelManager:
     def get_value(self, row_number: int, col: StrOrInt, absolute: bool = False) -> Any:
         """
         Получить значение:
-          row_no   : номер строки (1-based). Если absolute=False — это «номер строки данных»
+          row_no: номер строки (1-based). Если absolute=False — это «номер строки данных»
                      (т.е. 1 соответствует первой строке после заголовка).
                      Если absolute=True — это реальный Excel-ряд.
-          col      : индекс (0-based) или название столбца.
+          col: индекс (0-based) или название столбца.
         """
         col_idx = self.col_to_idx(col)
 
@@ -152,20 +153,10 @@ class ExcelManager:
         """Получить все значения столбца (по индексу или имени)."""
         idx = self.col_to_idx(col)
         if include_header:
-            return (
-                    [
-                        self.header.names[idx]
-                    ] + [
-                        r[idx]
-                        if idx < len(r)
-                        else None
-                        for r in
-                        self.data_rows()
-                    ]
-            )
+            return [self.header.names[idx]] + [
+                r[idx] if idx < len(r) else None for r in self.data_rows()
+            ]
         return [r[idx] if idx < len(r) else None for r in self.data_rows()]
-
-    # фильтрация
 
     def filter(self, rules: dict[StrOrInt, dict[str, Any]]) -> list[list[Any]]:
         """Фильтрация по правилам, но можно указывать колонки по имени или индексу.
@@ -183,19 +174,16 @@ class ExcelManager:
         rows = self.data_rows()
         return filter_rows(rows, idx_rules)
 
-    # копирование/запись
-
     def copy_columns(
-            self,
-            dest_path: Union[str, Path] | None,
-            dest_sheet: str,
-            columns: list[StrOrInt],
-            rows: list[list[Any]] | None = None,
-            include_header: bool = True,
-            start_cell: str = 'A1',
+        self,
+        dest_path: Optional[Union[str, Path]],
+        dest_sheet: str,
+        columns: list[StrOrInt],
+        rows: Optional[list[list[Any]]] = None,
+        include_header: bool = True,
+        start_cell: str = "A1",
     ) -> Path:
-        """
-        Скопировать выбранные столбцы текущего листа в ДРУГУЮ книгу/лист.
+        """Скопировать выбранные столбцы текущего листа в ДРУГУЮ книгу/лист.
         Если файла нет — создаём; если листа нет — создаём (регистронезависимо).
 
         :param dest_path: путь к выходному xlsx (если None — берём self.path)
@@ -217,10 +205,9 @@ class ExcelManager:
 
         out_rows: list[list[Any]] = []
         if include_header:
-            out_rows.append([
-                self.header.names[i] if i < len(self.header.names) else None
-                for i in col_indices
-            ])
+            out_rows.append(
+                [self.header.names[i] if i < len(self.header.names) else None for i in col_indices]
+            )
         for r in src_rows:
             out_rows.append([r[i] if i < len(r) else None for i in col_indices])
 
@@ -233,11 +220,11 @@ class ExcelManager:
         return dest_path
 
     def write_rows(
-            self,
-            dest_path: Union[str, Path],
-            dest_sheet: str,
-            rows: list[list[Any]],
-            start_cell: str = 'A1',
+        self,
+        dest_path: Union[str, Path],
+        dest_sheet: str,
+        rows: list[list[Any]],
+        start_cell: str = "A1",
     ) -> Path:
         """Запись произвольных rows в целевую книгу/лист."""
         dest_path = Path(dest_path)
@@ -257,17 +244,32 @@ class ExcelManager:
         dwb.save(dest_path)
         return dest_path
 
-    def transfer_by_headers(
-            self,
-            dest_path: Union[str, Path] | None,
-            dest_sheet: str,
-            headers: list[str],
-            rows: list[list[Any]] | None = None,
-            include_header: bool = True,
-            start_cell: str = 'A1',
-    ) -> Path:
+    def col_idx_by_name(self, name: str, if_missing: Optional[int] = None) -> int:
+        """Возвращает индекс колонки по названию (без учёта регистра и пробелов).
+
+        Если колонки нет в исходном файле, но передан if_missing — возвращает этот индекс
+        (используется для виртуальных колонок, которых нет в исходнике, но они есть в шаблоне).
         """
-        «Передача названий столбцов и перенос их в другую таблицу»:
+        key = str(name).strip().lower()
+        if key in self.header.name_to_idx:
+            return self.header.name_to_idx[key]
+
+        if if_missing is not None:
+            return if_missing
+
+        available = ", ".join(self.header.name_to_idx.keys())
+        raise KeyError(f"Колонка '{name}' не найдена. Доступные: {available}")
+
+    def transfer_by_headers(
+        self,
+        dest_path: Optional[Union[str, Path]],
+        dest_sheet: str,
+        headers: list[str],
+        rows: Optional[list[list[Any]]] = None,
+        include_header: bool = True,
+        start_cell: str = "A1",
+    ) -> Path:
+        """Передача названий столбцов и перенос их в другую таблицу:
         принимаем список заголовков (в нужном порядке), копируем соответствующие колонки.
 
         :param dest_path: путь к выходному xlsx (если None — берём self.path)
@@ -287,17 +289,16 @@ class ExcelManager:
         )
 
     def filter_and_transfer(
-            self,
-            dest_path: Union[str, Path] | None,
-            dest_sheet: str,
-            columns: list[StrOrInt],
-            rules: dict[StrOrInt, dict[str, Any]],
-            rows: list[list[Any]] | None = None,
-            include_header: bool = True,
-            start_cell: str = "A1",
+        self,
+        dest_path: Optional[Union[str, Path]],
+        dest_sheet: str,
+        columns: list[StrOrInt],
+        rules: dict[StrOrInt, dict[str, Any]],
+        rows: Optional[list[list[Any]]] = None,
+        include_header: bool = True,
+        start_cell: str = "A1",
     ) -> Path:
-        """
-        Фильтрует строки по правилам и переносит выбранные колонки в другую таблицу.
+        """Фильтрует строки по правилам и переносит выбранные колонки в другую таблицу.
 
         :param dest_path: путь к выходному xlsx (если None — берём self.path)
         :param dest_sheet: имя листа в выходном файле
@@ -324,10 +325,9 @@ class ExcelManager:
         col_indices = [self.col_to_idx(c) for c in columns]
         out_rows: list[list[Any]] = []
         if include_header:
-            out_rows.append([
-                self.header.names[i] if i < len(self.header.names) else None
-                for i in col_indices
-            ])
+            out_rows.append(
+                [self.header.names[i] if i < len(self.header.names) else None for i in col_indices]
+            )
         for r in filtered_rows:
             out_rows.append([r[i] if i < len(r) else None for i in col_indices])
 
@@ -340,13 +340,13 @@ class ExcelManager:
         return dest_path
 
     def transfer_styles(
-            self,
-            dest_path: Union[str, Path] | None = None,
-            dest_sheet: str = None,
-            columns: list[StrOrInt] = None,
-            rows: list[list[Any]] | None = None,
-            include_header: bool = True,
-            start_cell: str = "A1",
+        self,
+        dest_path: Optional[Union[str, Path]] = None,
+        dest_sheet: str = None,
+        columns: list[StrOrInt] = None,
+        rows: Optional[list[list[Any]]] = None,
+        include_header: bool = True,
+        start_cell: str = "A1",
     ) -> Path:
         """Переносит только стили (шрифт, цвет, формат, границы) для выбранных колонок и строк.
         !!! Работает только если ExcelManager открыт с read_only=False. !!!
@@ -378,7 +378,7 @@ class ExcelManager:
 
         for i in range(total_rows):
             for j, col_idx in enumerate(col_indices, start=start_col):
-                src_row_idx = self.header.row_idx + i  # абсолютный Excel-ряд
+                src_row_idx = self.header.row_idx + i  # абсолютный excel ряд
                 source_cell = self.ws.cell(row=src_row_idx, column=col_idx + 1)
                 target_cell = dws.cell(row=start_row + i, column=j)
                 if source_cell.has_style:
