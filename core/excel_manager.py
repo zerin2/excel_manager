@@ -77,6 +77,39 @@ class ExcelManager:
             f"Проверьте первые {scan_rows} строк."
         )
 
+    def find_header_by_expected(
+            self,
+            expected_headers: list[str],
+            max_scan_rows: int = 30,
+            min_matches: int = 2,
+    ) -> HeaderInfo:
+        """
+        Ищет строку, где встречаются указанные заголовки.
+        Возвращает HeaderInfo (аналог build_header).
+
+        expected_headers: список ожидаемых названий столбцов
+        max_scan_rows: сколько верхних строк проверять
+        min_matches: минимальное количество совпадений, чтобы считать строку заголовком
+        """
+        expected_norm = {_norm_header(h) for h in expected_headers}
+
+        for i, row in enumerate(
+                self.ws.iter_rows(min_row=1, max_row=max_scan_rows, values_only=True),
+                start=1,
+        ):
+            normalized = [_norm_header(c) for c in row]
+            matches = sum(1 for c in normalized if c in expected_norm)
+            if matches >= min_matches:
+                names = [c if c else "" for c in row]
+                name_to_idx = {_norm_header(v): idx for idx, v in enumerate(names)}
+                self.header = HeaderInfo(row_idx=i, names=names, name_to_idx=name_to_idx)
+                return self.header
+
+        raise ValueError(
+            f"Не удалось найти строку заголовков среди первых {max_scan_rows} строк. "
+            f"Ожидались: {expected_headers}"
+        )
+
     def build_header(self, header_row: Optional[int] = None) -> HeaderInfo:
         row_idx = header_row or self._detect_header_row()
 

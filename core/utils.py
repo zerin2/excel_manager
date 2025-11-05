@@ -1,5 +1,6 @@
+from datetime import date, datetime
 from pathlib import Path
-from typing import Union, Any
+from typing import Union, Any, Optional
 
 from openpyxl import Workbook
 
@@ -52,3 +53,21 @@ def ensure_ws(wb: Workbook, sheet_name: str):
         existing_map[key] = sheet_name
         return ws
     return wb[existing_map[key]]
+
+
+def to_date(v) -> Optional[date]:
+    """Приводит значение ячейки к date."""
+    if v is None or v == "":
+        return None
+    if isinstance(v, date) and not isinstance(v, datetime):
+        return v
+    if isinstance(v, datetime):
+        return v.date()
+    if isinstance(v, str):
+        v = v.strip()
+        for fmt in ("%d.%m.%Y", "%Y-%m-%d", "%d/%m/%Y"):
+            try:
+                return datetime.strptime(v, fmt).date()
+            except ValueError:
+                pass
+    return None
